@@ -1,0 +1,3 @@
+total = 3.14 + x_1
+if total >= 42:
+    y = total * 2

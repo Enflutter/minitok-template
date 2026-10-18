@@ -1,0 +1,9 @@
+{
+  "tests/test_spec.py": "b27046d0546a543bc672169e76f662cdb1bd882bc1f755b2d908e4f502461736",
+  "tests/test_regex_compiler.py": "c6f561704bcfc6d874c1cbcbd4adcffe0916aadab4ea2aeb7a931d496caf156a",
+  "tests/test_automata.py": "b290f976cb9c65af9d046b83f602335cb0fac51d8089e973ab008ef775e86b1f",
+  "tests/test_tokenizer_cli.py": "9ee8732ad1b75982807aad7195ee9e034236c7ea94fe5a457def52fe3de22211",
+  "tests/test_bpe_bonus.py": "8c036439e557a931bedb50c9094ddb3c5bef819440f3ecbb93925cfeba6d866f",
+  "grading/weights.json": "70e8b61649e0a53fdf16e4380f265d3b23f5d1629a62f25764f6f053bcb3aa70",
+  ".github/workflows/classroom.yml": "63db1f2a09ac86e1826b26208e9bcc79e290fb65a0512c09bd097b93258874d5"
+}

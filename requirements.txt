@@ -1,0 +1,5 @@
+# Runtime: none (standard library only).
+# Autograder runs on stdlib unittest — no test framework needed.
+# Part B ONLY: OpenAI's BPE tokenizer library. Using it anywhere in Part A
+# or the bonus is an integrity violation (see README §Constraints).
+tiktoken>=0.7
