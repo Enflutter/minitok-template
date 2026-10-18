@@ -1,9 +1,9 @@
 # minitok — ITCS317 Course Project: Regular Languages Meet LLMs
 
-> **Weight:** 5% of the course grade (100 pts + bonus) · **Released:** Week 6 (L17)
-> **Repo link due:** Sunday of Week 6 · **Progress check:** Sunday of Week 10
-> **Final due:** Week 13, day of L39, 23:59 (your pushed repo state is graded)
+> **Weight:** 5% of the course grade (100 pts + bonus)
 > **Work mode:** individually **or in pairs** (max 2 students — see §Working in pairs)
+> All dates and deadlines are announced on Blackboard — your pushed repo state
+> at the deadline is graded.
 
 Modern LLMs don't read characters — they read **tokens**. Before any neural
 network runs, a *tokenizer* segments raw text, and the classical core of every
@@ -18,7 +18,8 @@ production BPE tokenizer.
 2. **Clone your fork** and implement the `TODO`s in `minitok/`.
 3. **Push.** GitHub Actions runs the canonical test suite on every push and
    posts your autograded score to the workflow-run summary (Actions tab).
-4. **Submit your repo link on Blackboard** (Week 6, and confirm by Week 13).
+4. **Submit your repo link on Blackboard** (and confirm it again before the
+   final deadline).
 
 | Part | What | Pts | Graded by |
 |---|---|---|---|
@@ -39,7 +40,7 @@ You may do this project individually or in a pair (max 2 students). If you
 work as a pair:
 
 - **One fork per pair** — work in the same repo; do not fork separately.
-- **Both members submit the repo link** on Blackboard (Week 6 and Week 13).
+- **Both members submit the repo link** on Blackboard.
 - **Fill in [`CONTRIBUTIONS.md`](CONTRIBUTIONS.md)** at the repo root: names,
   student IDs, GitHub usernames, and each member's contributions.
 - **Both members must appear in the commit history** with their own GitHub
@@ -116,15 +117,8 @@ Partial bonus is not awarded; the gate is all-or-nothing.
   Undisclosed/out-of-bounds use = misconduct. You may be asked to explain any
   part of your code in a short viva.
 
-## Milestones
-| When | Requirement |
-|---|---|
-| Sun of Week 6 | Fork created; **repo link on Blackboard**; CI runs (even if red) |
-| Sun of Week 10 | **Progress check**: CI green on A1–A2 suites; ungraded, but missing = **−5 pts** on the project; formative feedback follows |
-| Week 13 (day of L39), 23:59 | Final state graded (last push before deadline) |
-
-Late policy: 10% of the project's value per day, up to 3 days.
-
-## Getting help
-Office hours + TA hours weekly — bring a failing test name, not a general
-question. Blackboard discussion board for spec clarifications (pinned answers).
+## Submission requirements
+1. **Fork + repo link:** fork created, **repo link on Blackboard**, and CI has
+   run at least once (even if red).
+2. **Final submission:** the last push before the deadline announced on
+   Blackboard is graded.
