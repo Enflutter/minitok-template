@@ -29,12 +29,13 @@ Regex syntax (a small extension of Sipser §1.3):
 `skip: true` token classes (typically whitespace/comments) are recognized
 and discarded by the scanner instead of being emitted.
 """
+
 from __future__ import annotations
  
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
- 
+import re
  
 class SpecError(ValueError):
     """Raised when a token specification is invalid."""
@@ -272,6 +273,11 @@ def load_spec(source: str | Path) -> TokenSpec:
             text = str(source)
  
     try:
+        text = re.sub(
+            r'(?<!\\)\\([+-])',
+            lambda m: r'\\' + m.group(1),
+            text
+        )
         data = json.loads(text)
     except json.JSONDecodeError as e:
         raise SpecError(f"Malformed JSON: {e}") from e
