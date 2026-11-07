@@ -35,7 +35,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-import re
  
 class SpecError(ValueError):
     """Raised when a token specification is invalid."""
@@ -126,9 +125,7 @@ def tokenize_regex(regex_str: str) -> list[tuple[str, str]]:
         elif c in ('|', '*', '(', ')'):
             if c == '(':
                 paren_depth += 1
-            
-                if i + 1 < n and regex_str[i + 1] == ')':
-                    raise SpecError("Empty parentheses () are not allowed")
+          
             elif c == ')':
                 paren_depth -= 1
                 if paren_depth < 0:
@@ -271,13 +268,7 @@ def load_spec(source: str | Path) -> TokenSpec:
                 raise SpecError(f"Cannot read file {source}: {e}") from e
         else:
             text = str(source)
- 
     try:
-        text = re.sub(
-            r'(?<!\\)\\([+-])',
-            lambda m: r'\\' + m.group(1),
-            text
-        )
         data = json.loads(text)
     except json.JSONDecodeError as e:
         raise SpecError(f"Malformed JSON: {e}") from e
