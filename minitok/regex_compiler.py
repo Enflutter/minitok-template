@@ -18,211 +18,225 @@ Design guidance:
 """
 
 
-
 from __future__ import annotations
  
-from collections import deque
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
  
-if TYPE_CHECKING:
-    from .spec import TokenSpec
+from .automata import NFA, EPS
  
-EPS = "" 
+GROUP_STAR_IS_KLEENE = True
  
  
-class ScanError(ValueError):
-    """Raised when no token class matches at the current input position.
- 
-    `position` is the 0-based character offset of the failure."""
- 
-    def __init__(self, message: str, position: int):
-        super().__init__(message)
-        self.position = position
+class RegexSyntaxError(ValueError):
+    """Raised for malformed regular expressions."""
  
  
 @dataclass
-class NFA:
-    states: set[int] = field(default_factory=set)
-    alphabet: set[str] = field(default_factory=set) 
-    transitions: dict[int, dict[str, set[int]]] = field(default_factory=dict)
-    start: int = 0
-    accepts: set[int] = field(default_factory=set)
+class _Node:
+    """AST node representation."""
  
-    def simulate(self, s: str) -> bool:
-        """True iff this NFA accepts string s (on-the-fly subset simulation
-        with epsilon closures). Handles epsilon cycles."""
-        current = eps_closure(self, {self.start})
-        for ch in s:
-            moved: set[int] = set()
-            for st in current:
-                moved |= self.transitions.get(st, {}).get(ch, set())
-            if not moved:
-                return False
-            current = eps_closure(self, moved)
-        return bool(current & self.accepts)
+    kind: str
+    value: str = ""
+    children: list["_Node"] | None = None
+    grouped: bool = False 
  
  
-@dataclass
-class DFA:
-    states: set[int] = field(default_factory=set)
-    alphabet: set[str] = field(default_factory=set)
-    transitions: dict[int, dict[str, int]] = field(default_factory=dict)
-    start: int = 0
-    accepts: dict[int, str] = field(default_factory=dict)
+def _lex(regex: str) -> list[tuple[str, str]]:
+    tokens: list[tuple[str, str]] = []
+    i = 0
+    n = len(regex)
+    depth = 0
  
-    def simulate(self, s: str) -> str | None:
-        """Return the accepting label for s, or None if rejected/incomplete."""
-        state = self.start
-        for ch in s:
-            nxt = self.transitions.get(state, {}).get(ch)
-            if nxt is None:
-                return None
-            state = nxt
-        return self.accepts.get(state)
+    while i < n:
+        c = regex[i]
+        if c == "\\":
+            if i + 1 >= n:
+                raise RegexSyntaxError("Trailing escape character in regex")
+            tokens.append(("LITERAL", regex[i + 1]))
+            i += 2
+        elif c == "<":
+            end = regex.find(">", i)
+            content = regex[i + 1:end] if end != -1 else None
+            if content is not None and content.isalpha():
+                if content in ("letter", "digit"):
+                    tokens.append(("CLASS", content))
+                    i = end + 1
+                else:
+                    raise RegexSyntaxError(f"Unknown shorthand class: <{content}>")
+            else:
+                tokens.append(("LITERAL", "<"))
+                i += 1
+        elif c in ("|", "*", "(", ")"):
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth < 0:
+                    raise RegexSyntaxError("Unbalanced parentheses in regex")
+            tokens.append(("OP", c))
+            i += 1
+        else: 
+            tokens.append(("LITERAL", c))
+            i += 1
  
- 
-@dataclass
-class Token:
-    type: str
-    lexeme: str
-    position: int 
-    
- 
-def eps_closure(nfa: NFA, states: set[int]) -> set[int]:
-    """Epsilon closure of a set of NFA states (iterative, cycle-safe)."""
-    closure = set(states)
-    stack = list(states)
-    while stack:
-        st = stack.pop()
-        for nxt in nfa.transitions.get(st, {}).get(EPS, ()):
-            if nxt not in closure:
-                closure.add(nxt)
-                stack.append(nxt)
-    return closure
- 
- 
-def determinize(nfa: NFA, label_of: dict[int, str], priority: list[str]) -> DFA:
-    """Subset construction (Sipser §1.2) producing a tokenizer DFA.
- 
-    Choice: transitions to the dead (empty) state are omitted; DFA.simulate
-    and scan treat a missing transition as rejection. DFA start state is 0.
-    """
-    rank = {name: i for i, name in enumerate(priority)}
-    worst = len(priority)
- 
-    start_set = frozenset(eps_closure(nfa, {nfa.start}))
-    ids: dict[frozenset, int] = {start_set: 0}
-    transitions: dict[int, dict[str, int]] = {}
-    accepts: dict[int, str] = {}
-    queue = deque([start_set])
- 
-    while queue:
-        current = queue.popleft()
-        cid = ids[current]
- 
-        best_label = None
-        best_rank = worst + 1
-        for st in current:
-            if st in label_of:
-                name = label_of[st]
-                r = rank.get(name, worst)
-                if r < best_rank:
-                    best_rank, best_label = r, name
-        if best_label is not None:
-            accepts[cid] = best_label
- 
-        moves: dict[str, set[int]] = {}
-        for st in current:
-            for sym, dsts in nfa.transitions.get(st, {}).items():
-                if sym != EPS:
-                    moves.setdefault(sym, set()).update(dsts)
- 
-        for sym, dsts in moves.items():
-            target = frozenset(eps_closure(nfa, dsts))
-            if target not in ids:
-                ids[target] = len(ids)
-                queue.append(target)
-            transitions.setdefault(cid, {})[sym] = ids[target]
- 
-    return DFA(
-        states=set(ids.values()),
-        alphabet=set(nfa.alphabet),
-        transitions=transitions,
-        start=0,
-        accepts=accepts,
-    )
+    if depth != 0:
+        raise RegexSyntaxError("Unbalanced parentheses in regex")
+    return tokens
  
  
-def build_token_dfa(spec: "TokenSpec") -> DFA:
-    """Compile every token class of the spec into one combined DFA."""
-    from .regex_compiler import compile_regex 
+def parse(regex: str) -> _Node:
+    """Parse a regex string into an AST. Raise RegexSyntaxError on bad input."""
+    if not isinstance(regex, str) or regex == "":
+        raise RegexSyntaxError("Empty or invalid regex string")
  
-    transitions: dict[int, dict[str, set[int]]] = {}
-    states: set[int] = set()
-    alphabet: set[str] = set()
-    label_of: dict[int, str] = {}
- 
-    new_start = 0
-    offset = 1  
-    states.add(new_start)
-    transitions[new_start] = {EPS: set()}
- 
-    for tc in spec.tokens:
-        nfa = compile_regex(tc.regex)
-        for st in nfa.states:
-            states.add(st + offset)
-        for src, d in nfa.transitions.items():
-            for sym, dsts in d.items():
-                transitions.setdefault(src + offset, {}).setdefault(sym, set()).update(
-                    d_ + offset for d_ in dsts
-                )
-        alphabet |= nfa.alphabet
-        transitions[new_start][EPS].add(nfa.start + offset)
-        for acc in nfa.accepts:
-            label_of[acc + offset] = tc.name
-        offset += max(nfa.states) + 1 if nfa.states else 1
- 
-    combined = NFA(
-        states=states,
-        alphabet=alphabet,
-        transitions=transitions,
-        start=new_start,
-        accepts=set(label_of),
-    )
-    return determinize(combined, label_of, spec.names)
- 
- 
-def scan(dfa: DFA, spec: "TokenSpec", text: str) -> list[Token]:
-    """Tokenize `text` by repeated maximal munch from the DFA start state."""
-    skip = {t.name for t in spec.tokens if t.skip}
-    tokens: list[Token] = []
-    n = len(text)
+    tokens = _lex(regex)
     pos = 0
  
-    while pos < n:
-        state = dfa.start
-        last_label: str | None = None
-        last_end = pos
-        i = pos
+    def peek():
+        return tokens[pos] if pos < len(tokens) else None
  
-        while i < n:
-            nxt = dfa.transitions.get(state, {}).get(text[i])
-            if nxt is None:
+    def advance():
+        nonlocal pos
+        t = tokens[pos]
+        pos += 1
+        return t
+ 
+    def parse_union() -> _Node:
+        node = parse_concat()
+        while peek() == ("OP", "|"):
+            advance()
+            node = _Node("union", children=[node, parse_concat()])
+        return node
+ 
+    def parse_concat() -> _Node:
+        t = peek()
+        if t is None or t in (("OP", "|"), ("OP", ")")):
+            raise RegexSyntaxError("Empty term or unexpected operator")
+        node = parse_star()
+        while True:
+            t = peek()
+            if t is None or t in (("OP", "|"), ("OP", ")")):
                 break
-            state = nxt
-            i += 1
-            if state in dfa.accepts:
-                last_label = dfa.accepts[state]
-                last_end = i
+            node = _Node("concat", children=[node, parse_star()])
+        return node
  
-        if last_label is None:
-            raise ScanError(
-                f"Unexpected character {text[pos]!r} at position {pos}", pos
-            )
+    def parse_star() -> _Node:
+        node = parse_atom()
+        while peek() == ("OP", "*"):
+            advance()
+            if node.grouped and GROUP_STAR_IS_KLEENE:
+                node = _Node("star", children=[node])
+            else:
+                node = _Node("plus", children=[node])
+        return node
  
-        if last_label not in skip:
-            tokens.append(Token(last_label, text[pos:last_end], pos))
-        pos = last_end
+    def parse_atom() -> _Node:
+        t = peek()
+        if t is None:
+            raise RegexSyntaxError("Unexpected end of regex")
+        if t[0] == "LITERAL":
+            advance()
+            return _Node("literal", value=t[1])
+        if t[0] == "CLASS":
+            advance()
+            return _Node("class", value=t[1])
+        if t == ("OP", "("):
+            advance()
+            node = parse_union()
+            if peek() != ("OP", ")"):
+                raise RegexSyntaxError("Missing closing parenthesis")
+            advance()
+            node.grouped = True
+            return node
+        raise RegexSyntaxError(f"Unexpected token in regex: {t[1]!r}")
  
-    return tokens
+    ast = parse_union()
+    if pos < len(tokens):
+        raise RegexSyntaxError("Unexpected trailing tokens in regex")
+    return ast
+ 
+ 
+_LETTERS = [chr(c) for c in range(ord("a"), ord("z") + 1)] + [
+    chr(c) for c in range(ord("A"), ord("Z") + 1)
+]
+_DIGITS = [str(d) for d in range(10)]
+ 
+ 
+def compile_regex(regex: str) -> NFA:
+    """Compile a regex string to an NFA (Thompson's construction).
+ 
+    One start state, one accept state, epsilon transitions as needed.
+    """
+    ast = parse(regex)
+ 
+    counter = 0
+    trans: dict[int, dict[str, set[int]]] = {}
+ 
+    def new_state() -> int:
+        nonlocal counter
+        counter += 1
+        return counter - 1
+ 
+    def add(src: int, sym: str, dst: int) -> None:
+        trans.setdefault(src, {}).setdefault(sym, set()).add(dst)
+ 
+    def build(node: _Node) -> tuple[int, int]:
+        """Return (start, accept) of the fragment for this node."""
+        if node.kind == "literal":
+            s, a = new_state(), new_state()
+            add(s, node.value, a)
+            return s, a
+ 
+        if node.kind == "class":
+            s, a = new_state(), new_state()
+            chars = _LETTERS if node.value == "letter" else _DIGITS
+            for ch in chars:
+                add(s, ch, a)
+            return s, a
+ 
+        if node.kind == "concat":
+            s1, a1 = build(node.children[0])
+            s2, a2 = build(node.children[1])
+            add(a1, EPS, s2)
+            return s1, a2
+ 
+        if node.kind == "union":
+            s, a = new_state(), new_state()
+            s1, a1 = build(node.children[0])
+            s2, a2 = build(node.children[1])
+            add(s, EPS, s1)
+            add(s, EPS, s2)
+            add(a1, EPS, a)
+            add(a2, EPS, a)
+            return s, a
+ 
+        if node.kind == "plus":
+            s, a = new_state(), new_state()
+            s1, a1 = build(node.children[0])
+            add(s, EPS, s1)
+            add(a1, EPS, s1) 
+            add(a1, EPS, a)
+            return s, a
+ 
+        if node.kind == "star":
+            s, a = new_state(), new_state()
+            s1, a1 = build(node.children[0])
+            add(s, EPS, s1)
+            add(s, EPS, a) 
+            add(a1, EPS, s1)
+            add(a1, EPS, a)
+            return s, a
+ 
+        raise RegexSyntaxError(f"Unknown AST node kind: {node.kind}")
+ 
+    start, accept = build(ast)
+    alphabet = {sym for d in trans.values() for sym in d if sym != EPS}
+ 
+    return NFA(
+        states=set(range(counter)),
+        alphabet=alphabet,
+        transitions=trans,
+        start=start,
+        accepts={accept},
+    )
+ 
