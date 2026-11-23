@@ -9,6 +9,7 @@ Grammar you must support (see spec.py for the surface syntax):
     CLASS   := '<letter>' | '<digit>'
     LITERAL := alnum | escaped operator char | space | '_' | '.' etc.
 
+
 Design guidance:
   - Parse to an AST (or postfix) with correct precedence (* > concat > |).
   - Compile each AST node to an NFA fragment following Sipser's inductive
